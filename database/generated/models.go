@@ -17,7 +17,8 @@ type Message struct {
 }
 
 type User struct {
-	ID        string
-	Username  string
-	CreatedAt sql.NullTime
+	ID           string
+	Username     string
+	CreatedAt    sql.NullTime
+	PasswordHash string
 }

@@ -36,20 +36,99 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, username)
-VALUES ($1, $2)
+INSERT INTO users (id, username, password_hash) 
+VALUES ($1, $2, $3) 
 RETURNING id, username, created_at
 `
 
 type CreateUserParams struct {
-	ID       string
-	Username string
+	ID           string
+	Username     string
+	PasswordHash string
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRowContext(ctx, createUser, arg.ID, arg.Username)
-	var i User
+type CreateUserRow struct {
+	ID        string
+	Username  string
+	CreatedAt sql.NullTime
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
+	row := q.db.QueryRowContext(ctx, createUser, arg.ID, arg.Username, arg.PasswordHash)
+	var i CreateUserRow
 	err := row.Scan(&i.ID, &i.Username, &i.CreatedAt)
+	return i, err
+}
+
+const getMessages = `-- name: GetMessages :many
+SELECT m.id, m.user_id, u.username, m.content, m.file_url, m.created_at 
+FROM messages m
+JOIN users u ON m.user_id = u.id
+ORDER BY m.created_at ASC 
+LIMIT 100
+`
+
+type GetMessagesRow struct {
+	ID        int32
+	UserID    string
+	Username  string
+	Content   sql.NullString
+	FileUrl   sql.NullString
+	CreatedAt sql.NullTime
+}
+
+func (q *Queries) GetMessages(ctx context.Context) ([]GetMessagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getMessages)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetMessagesRow
+	for rows.Next() {
+		var i GetMessagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Username,
+			&i.Content,
+			&i.FileUrl,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUserByUsername = `-- name: GetUserByUsername :one
+SELECT id, username, password_hash, created_at 
+FROM users 
+WHERE username = $1 LIMIT 1
+`
+
+type GetUserByUsernameRow struct {
+	ID           string
+	Username     string
+	PasswordHash string
+	CreatedAt    sql.NullTime
+}
+
+func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUserByUsernameRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserByUsername, username)
+	var i GetUserByUsernameRow
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 
